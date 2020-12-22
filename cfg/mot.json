@@ -2,14 +2,14 @@
     "size": [1280, 720],
 
     "video_io": {
-        "camera_size": [1920, 1080],
-        "camera_fps": 30,
-        "buffer_size": 10
+        "camera_size": [2304, 1296],
+        "camera_fps": 25,
+        "buffer_size": 1
     },
 
     "mot": {
         "detector_type": "YOLO",
-        "detector_frame_skip": 5,
+        "detector_frame_skip": 4,
 
         "ssd_detector": {
             "model": "SSDInceptionV2",
@@ -22,7 +22,7 @@
         },
         "yolo_detector": {
             "model": "YOLOv4",
-            "class_ids": [1],
+            "class_ids": [0, 1, 2, 3, 4, 5, 6, 7, 8, 14, 15, 16],
             "conf_thresh": 0.25,
             "max_area": 800000,
             "nms_thresh": 0.5

@@ -9,6 +9,7 @@ import cv2
 
 import fastmot
 
+from framecache import FrameCache
 
 def main():
     parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
@@ -51,17 +52,25 @@ def main():
     if args.gui:
         cv2.namedWindow("Video", cv2.WINDOW_AUTOSIZE)
 
+    frameCache = FrameCache(config['size'], 100)
+    
     logger.info('Starting video capture...')
     stream.start_capture()
+    tic = time.perf_counter()
     try:
-        tic = time.perf_counter()
         while not args.gui or cv2.getWindowProperty("Video", 0) >= 0:
             frame = stream.read()
             if frame is None:
                 break
 
             if args.mot:
+                frame_copy = frame.copy()
+                
                 mot.step(frame)
+                
+                frameCache.appendFrame(mot.frame_count, frame_copy)
+                frameCache.publishTracks(mot.frame_count, mot.visible_tracks)
+                
                 if log is not None:
                     for track in mot.visible_tracks:
                         # MOT17 dataset is usually of size 1920x1080, modify this otherwise
@@ -69,19 +78,21 @@ def main():
                         tl = track.tlbr[:2] / config['size'] * orig_size
                         br = track.tlbr[2:] / config['size'] * orig_size
                         w, h = br - tl + 1
+                                                
                         log.write(f'{mot.frame_count},{track.trk_id},{tl[0]:.6f},{tl[1]:.6f},'
-                                  f'{w:.6f},{h:.6f},-1,-1,-1\n')
+                                f'{w:.6f},{h:.6f},-1,-1,-1\n')
 
             if args.gui:
                 cv2.imshow('Video', frame)
                 if cv2.waitKey(1) & 0xFF == 27:
                     break
             if args.output_uri is not None:
-                stream.write(frame)
-
+                stream.write(frame)        
+    except KeyboardInterrupt:
+        pass
+    finally:
         toc = time.perf_counter()
         elapsed_time = toc - tic
-    finally:
         # clean up resources
         if log is not None:
             log.close()

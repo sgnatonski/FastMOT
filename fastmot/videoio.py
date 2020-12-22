@@ -47,7 +47,7 @@ class VideoIO:
 
         self.protocol = self._parse_uri(self.input_uri)
         if WITH_GSTREAMER:
-            self.cap = cv2.VideoCapture(self._gst_cap_pipeline(), cv2.CAP_GSTREAMER)
+            self.cap = cv2.VideoCapture(self.input_uri, cv2.CAP_GSTREAMER)
         else:
             self.cap = cv2.VideoCapture(self.input_uri)
 
@@ -229,7 +229,7 @@ class VideoIO:
             protocol = Protocol.V4L2
         elif uri[:pos] == 'csi':
             protocol = Protocol.CSI
-        elif uri[:pos] == 'rtsp':
+        elif uri[pos-4:pos] == 'rtsp':
             protocol = Protocol.RTSP
         else:
             protocol = Protocol.FILE
