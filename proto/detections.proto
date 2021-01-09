@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package caim;
+
+message Detection {
+  uint32 id = 1;
+  uint32 cl = 2;
+  uint32 x = 3;
+  uint32 y = 4;
+  uint32 w = 5;
+  uint32 h = 6;
+  bytes ft = 7;
+}
+
+message Frame {
+  uint32 frame = 1;
+  uint32 ex = 2;
+  repeated Detection det = 3;
+}

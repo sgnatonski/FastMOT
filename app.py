@@ -24,6 +24,7 @@ def main():
                         help='URI to output stream (e.g. output.mp4)')
     parser.add_argument('-l', '--log', metavar="FILE",
                         help='output a MOT Challenge format log (e.g. eval/results/mot17-04.txt)')
+    parser.add_argument('-nats', '--nats', metavar="URI", required=True, help='NATS url')
     parser.add_argument('-g', '--gui', action='store_true', help='enable display')
     parser.add_argument('-v', '--verbose', action='store_true', help='verbose output for debugging')
     args = parser.parse_args()
@@ -52,7 +53,7 @@ def main():
     if args.gui:
         cv2.namedWindow("Video", cv2.WINDOW_AUTOSIZE)
 
-    frameCache = FrameCache(config['size'], 100)
+    frameCache = FrameCache(config['size'], 100, args.nats)
     
     logger.info('Starting video capture...')
     stream.start_capture()
@@ -68,8 +69,7 @@ def main():
                 
                 mot.step(frame)
                 
-                frameCache.appendFrame(mot.frame_count, frame_copy)
-                frameCache.publishTracks(mot.frame_count, mot.visible_tracks)
+                frameCache.publishTracks(mot.frame_count, frame_copy, mot.visible_tracks)
                 
                 if log is not None:
                     for track in mot.visible_tracks:
