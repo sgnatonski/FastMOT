@@ -4,7 +4,8 @@
 <img src="assets/dense_demo.gif" width="400"/> <img src="assets/aerial_demo.gif" width="400"/>
 
 ## News
-  - (2020.11.28) Docker container is now supported on Ubuntu 18.04!
+  - (2021.1.3) Support DIoU-NMS for YOLO (+1% MOTA)
+  - (2020.11.28) Docker container provided on Ubuntu 18.04
 
 ## Description
 FastMOT is a custom multiple object tracker that implements:
@@ -14,9 +15,9 @@ FastMOT is a custom multiple object tracker that implements:
   - KLT optical flow tracking
   - Camera motion compensation
   
-Deep learning models are usually the bottleneck in Deep SORT, which makes Deep SORT unscalable for real-time applications. This repo significantly speeds up the entire system to run in **real-time** even on Jetson. It also provides enough flexibility to tune the speed-accuracy tradeoff without a lightweight model.
+Deep learning models are usually the bottleneck in Deep SORT, making Deep SORT unusable for real-time applications. This repo significantly speeds up the entire system to run in **real-time** even on Jetson. It also provides enough flexibility to tune the speed-accuracy tradeoff without a lightweight model.
 
-To achieve faster processing, the tracker only runs detector and feature extractor every *N* frames. Optical flow is then used to fill in the gaps. I swapped the feature extractor in Deep SORT for a better ReID model, OSNet. I also added a feature to re-identify targets that moved out of frame so that the tracker can keep the same IDs. I trained YOLOv4 on CrowdHuman while SSD's are pretrained COCO models from TensorFlow.
+To achieve faster processing, the tracker only runs the detector and feature extractor every *N* frames. Optical flow is then used to fill in the gaps. I swapped the feature extractor in Deep SORT for a better ReID model, OSNet. I also added a feature to re-identify targets that moved out of frame so that the tracker can keep the same IDs. I trained YOLOv4 on CrowdHuman (82% mAP@0.5) while SSD's are pretrained COCO models from TensorFlow.
 
 Both detector and feature extractor use the **TensorRT** backend and perform asynchronous inference. In addition, most algorithms, including Kalman filter, optical flow, and data association, are optimized using Numba. 
 
@@ -101,7 +102,6 @@ Only required if you want to use SSD
   - To swap model, modify `model` under a detector. For SSD, you can choose from `SSDInceptionV2`, `SSDMobileNetV1`, or `SSDMobileNetV2`
   - Note that with SSD, the detector splits a frame into tiles and processes them in batches for the best accuracy. Change `tiling_grid` to `[2, 2]`, `[2, 1]`, or `[1, 1]` if a smaller batch size is preferred
   - If more accuracy is desired and processing power is not an issue, reduce `detector_frame_skip`. Similarly, increase `detector_frame_skip` to speed up tracking at the cost of accuracy. You may also want to change `max_age` such that `max_age * detector_frame_skip` is around `30-40` 
- - Please star if you find this repo useful/interesting
   
  ## Track custom classes
 This repo supports multi-class tracking and thus can be easily extended to custom classes (e.g. vehicle). You need to train both YOLO and a ReID model on your object classes. Check [Darknet](https://github.com/AlexeyAB/darknet) for training YOLO and [fast-reid](https://github.com/JDAI-CV/fast-reid) for training ReID. After training, convert the model to ONNX format and place it under `fastmot/models`. To convert YOLO to ONNX, [tensorrt_demos](https://github.com/jkjung-avt/tensorrt_demos) is a great reference.
@@ -135,3 +135,19 @@ This repo supports multi-class tracking and thus can be easily extended to custo
     METRIC: distance metric used to match features ('euclidean' or 'cosine')
     ```
 2. Modify `cfg/mot.json`: under `feature_extractor`, set `model` to the added Python class. You may want to play with `max_feat_cost` and `max_reid_cost` - float values from `0` to `2`, based on the accuracy of your model
+
+ ## Citation
+ If you find this repo useful in your project or research, please star and consider citing it:
+ ```bibtex
+@software{yukai_yang_2020_4294717,
+  author       = {Yukai Yang},
+  title        = {{FastMOT: High-Performance Multiple Object Tracking 
+                   Based on YOLO, Deep SORT, and Optical Flow}},
+  month        = nov,
+  year         = 2020,
+  publisher    = {Zenodo},
+  version      = {v1.0.0},
+  doi          = {10.5281/zenodo.4294717},
+  url          = {https://doi.org/10.5281/zenodo.4294717}
+}
+```
