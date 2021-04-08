@@ -8,7 +8,7 @@ import cv2
 from . import models
 from .utils import InferenceBackend
 from .utils.rect import as_rect, to_tlbr, get_size, area
-from .utils.rect import union, multi_crop, iom, diou_nms
+from .utils.rect import union, crop, multi_crop, iom, diou_nms
 
 
 DET_DTYPE = np.dtype(
@@ -56,14 +56,13 @@ class SSDDetector(Detector):
         self.merge_thresh = config['merge_thresh']
 
         self.batch_size = int(np.prod(self.tiling_grid))
-        self.input_size = np.prod(self.model.INPUT_SHAPE)
+        self.inp_stride = np.prod(self.model.INPUT_SHAPE)
         self.tiles, self.tiling_region_size = self._generate_tiles()
         self.scale_factor = np.asarray(self.size) / self.tiling_region_size
         self.backend = InferenceBackend(self.model, self.batch_size)
 
     def detect_async(self, frame_id, frame):
-        frame = cv2.resize(frame, self.tiling_region_size)
-        self._preprocess(frame, self.tiles, self.backend.input.host, self.input_size)
+        self._preprocess(frame)
         self.backend.infer_async()
 
     def postprocess(self):
@@ -74,15 +73,19 @@ class SSDDetector(Detector):
         detections = self._merge_dets(detections, tile_ids)
         return detections
 
+    def _preprocess(self, frame):
+        frame = cv2.resize(frame, self.tiling_region_size)
+        self._normalize(frame, self.tiles, self.backend.input_handle, self.inp_stride)
+
     def _generate_tiles(self):
         tile_size = np.asarray(self.model.INPUT_SHAPE[:0:-1])
         tiling_grid = np.asarray(self.tiling_grid)
         step_size = (1 - self.tile_overlap) * tile_size
         total_size = (tiling_grid - 1) * step_size + tile_size
-        total_size = tuple(total_size.astype(int))
+        total_size = np.rint(total_size).astype(int)
         tiles = np.array([to_tlbr((c * step_size[0], r * step_size[1], *tile_size))
                           for r in range(tiling_grid[1]) for c in range(tiling_grid[0])])
-        return tiles, total_size
+        return tiles, tuple(total_size)
 
     def _merge_dets(self, detections, tile_ids):
         detections = np.asarray(detections, dtype=DET_DTYPE).view(np.recarray)
@@ -94,10 +97,10 @@ class SSDDetector(Detector):
 
     @staticmethod
     @nb.njit(parallel=True, fastmath=True, cache=True)
-    def _preprocess(frame, tiles, out, size):
+    def _normalize(frame, tiles, out, stride):
         imgs = multi_crop(frame, tiles)
         for i in nb.prange(len(imgs)):
-            offset = i * size
+            offset = i * stride
             bgr = imgs[i]
             # BGR to RGB
             rgb = bgr[..., ::-1]
@@ -105,7 +108,7 @@ class SSDDetector(Detector):
             chw = rgb.transpose(2, 0, 1)
             # Normalize to [-1.0, 1.0] interval
             normalized = chw * (2 / 255) - 1
-            out[offset:offset + size] = normalized.ravel()
+            out[offset:offset + stride] = normalized.ravel()
 
     @staticmethod
     @nb.njit(fastmath=True, cache=True)
@@ -177,51 +180,72 @@ class YoloDetector(Detector):
         self.max_area = config['max_area']
         self.nms_thresh = config['nms_thresh']
 
-        self.batch_size = 1
-        self.backend = InferenceBackend(self.model, self.batch_size)
+        self.backend = InferenceBackend(self.model, 1)
+        self.input_handle, self.upscaled_sz, self.bbox_offset = self._create_letterbox()
 
     def detect_async(self, frame_id, frame):
-        frame = cv2.resize(frame, self.model.INPUT_SHAPE[:0:-1])
-        self._preprocess(frame, self.backend.input.host)
+        self._preprocess(frame)
         self.backend.infer_async()
 
     def postprocess(self):
         det_out = self.backend.synchronize()
         det_out = np.concatenate(det_out).reshape(-1, 7)
-        detections = self._filter_dets(det_out, self.size, self.class_ids, self.conf_thresh,
-                                       self.nms_thresh, self.max_area)
+        detections = self._filter_dets(det_out, self.upscaled_sz, self.class_ids, self.conf_thresh,
+                                       self.nms_thresh, self.max_area, self.bbox_offset)
         detections = np.asarray(detections, dtype=DET_DTYPE).view(np.recarray)
         return detections
 
+    def _preprocess(self, frame):
+        frame = cv2.resize(frame, self.input_handle.shape[:0:-1])
+        self._normalize(frame, self.input_handle)
+
+    def _create_letterbox(self):
+        src_size = np.asarray(self.size)
+        dst_size = np.asarray(self.model.INPUT_SHAPE[:0:-1])
+        if self.model.LETTERBOX:
+            scale_factor = min(dst_size / src_size)
+            scaled_size = np.rint(src_size * scale_factor).astype(int)
+            img_offset = (dst_size - scaled_size) / 2
+            insert_roi = to_tlbr(np.r_[img_offset, scaled_size])
+            upscaled_sz = np.rint(dst_size / scale_factor).astype(int)
+            bbox_offset = (upscaled_sz - src_size) / 2
+            self.backend.input_handle = 0.5
+        else:
+            upscaled_sz = src_size
+            insert_roi = to_tlbr(np.r_[0, 0, dst_size])
+            bbox_offset = np.zeros(2)
+
+        input_handle = self.backend.input_handle.reshape(self.model.INPUT_SHAPE)
+        input_handle = crop(input_handle, insert_roi, chw=True)
+        return input_handle, upscaled_sz, bbox_offset
+
     @staticmethod
     @nb.njit(fastmath=True, cache=True)
-    def _preprocess(frame, out):
+    def _normalize(frame, out):
         # BGR to RGB
         rgb = frame[..., ::-1]
         # HWC -> CHW
         chw = rgb.transpose(2, 0, 1)
         # Normalize to [0, 1] interval
         normalized = chw / 255.
-        out[:] = normalized.ravel()
+        out[:] = normalized
 
     @staticmethod
     @nb.njit(fastmath=True, cache=True)
-    def _filter_dets(det_out, size, class_ids, conf_thresh, nms_thresh, max_area):
+    def _filter_dets(det_out, size, class_ids, conf_thresh, nms_thresh, max_area, offset):
         """
         det_out: a list of 3 tensors, where each tensor
                  contains a multiple of 7 float32 numbers in
                  the order of [x, y, w, h, box_confidence, class_id, class_prob]
         """
-        size = np.asarray(size)
-
         # drop detections with low score
         scores = det_out[:, 4] * det_out[:, 6]
         keep = np.where(scores >= conf_thresh)
         det_out = det_out[keep]
 
         # scale to pixel values
-        det_out[:, :2] *= size
-        det_out[:, 2:4] *= size
+        det_out[:, :4] *= np.append(size, size)
+        det_out[:, :2] -= offset
 
         keep = []
         for class_id in class_ids:

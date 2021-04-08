@@ -13,6 +13,8 @@ class YOLO:
     ENGINE_PATH = None
     MODEL_PATH = None
     NUM_CLASSES = None
+    LETTERBOX = False
+    NEW_COORDS = False
     INPUT_SHAPE = ()
     LAYER_FACTORS = []
     SCALES = []
@@ -45,8 +47,8 @@ class YOLO:
                 plugin_creator.create_plugin('YoloLayer_TRT', trt.PluginFieldCollection([
                     trt.PluginField("yoloWidth", np.array(yolo_width, dtype=np.int32), trt.PluginFieldType.INT32),
                     trt.PluginField("yoloHeight", np.array(yolo_height, dtype=np.int32), trt.PluginFieldType.INT32),
-                    trt.PluginField("inputWidth", np.array(cls.INPUT_SHAPE[2], dtype=np.int32), trt.PluginFieldType.INT32),
-                    trt.PluginField("inputHeight", np.array(cls.INPUT_SHAPE[1], dtype=np.int32), trt.PluginFieldType.INT32),
+                    trt.PluginField("inputMultiplier", np.array(cls.LAYER_FACTORS[i], dtype=np.int32), trt.PluginFieldType.INT32),
+                    trt.PluginField("newCoords", np.array(cls.NEW_COORDS, dtype=np.int32), trt.PluginFieldType.INT32),
                     trt.PluginField("numClasses", np.array(cls.NUM_CLASSES, dtype=np.int32), trt.PluginFieldType.INT32),
                     trt.PluginField("numAnchors", np.array(num_anchors, dtype=np.int32), trt.PluginFieldType.INT32),
                     trt.PluginField("anchors", np.array(cls.ANCHORS[i], dtype=np.float32), trt.PluginFieldType.FLOAT32),
